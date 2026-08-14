@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DSH Plugin Store catalog",
+  "description": "The registry index for the DeepSeek Harness Plugin Store. Register a plugin by adding one entry to plugins[] (via a pull request to catalog.json). A Plugin Store (or any federated store) reads this file through its manifestUrl config.",
+  "type": "object",
+  "required": ["plugins"],
+  "properties": {
+    "description": { "type": "string" },
+    "plugins": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/plugin" }
+    }
+  },
+  "definitions": {
+    "plugin": {
+      "type": "object",
+      "required": ["name", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "npm package name — the install spec (e.g. @linxin666/dsh-ssh).",
+          "pattern": "^(@[a-z0-9-~][a-z0-9-._~]*/)?[a-z0-9-~][a-z0-9-._~]*$"
+        },
+        "description": { "type": "string", "description": "One-line description shown in the list." },
+        "author": { "type": "string" },
+        "category": {
+          "type": "string",
+          "description": "suite | ops | ui | productivity | theme | dev | fun | other (displayed localized)."
+        },
+        "logo": { "type": "string", "description": "Emoji, a single letter, or an image URL." },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "highlights": { "type": "array", "items": { "type": "string" }, "description": "Bullet-point selling points." },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/member" },
+          "description": "Constituent packages when this entry is a suite/bundle (members are not listed separately)."
+        },
+        "repository": { "type": "string", "format": "uri", "description": "Source repository URL, shown for trust before install." },
+        "homepage": { "type": "string", "format": "uri" }
+      }
+    },
+    "member": {
+      "type": "object",
+      "required": ["name", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Member package name." },
+        "description": { "type": "string" },
+        "logo": { "type": "string" }
+      }
+    }
+  }
+}

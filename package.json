@@ -1,0 +1,14 @@
+{
+  "name": "dsh-plugin-store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DeepSeek Harness Plugin Store：dsh-plugin-store 插件 + 可 PR 的插件注册目录（catalog.json）。",
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "lightningcss": "^1.32.0",
+    "tsdown": "^0.22.2"
+  }
+}
