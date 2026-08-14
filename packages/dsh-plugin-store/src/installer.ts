@@ -10,6 +10,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
+import { load as loadYaml, dump as dumpYaml } from 'js-yaml'
 import type { InstallResult, StatusResult } from './protocol.ts'
 
 interface ProfileManifest {
@@ -97,8 +98,10 @@ export class InstallerService {
 
   /** Run `pnpm add <spec>` and reconcile. */
   async install(spec: string, onLog?: (chunk: string) => void): Promise<InstallResult> {
+    const before = this.lockfilePackageKeys()
     const result = await this.runPnpm(['add', spec], onLog)
     if (result.exitCode === 0) {
+      this.trustNewLockfileEntries(before)
       this.reconcile()
       return { ok: true, spec, name: this.resolvedName(spec), requiresRestart: true }
     }
@@ -117,8 +120,10 @@ export class InstallerService {
 
   /** Run `pnpm add <name>@latest` (update to the latest registry version) and reconcile. */
   async update(name: string, onLog?: (chunk: string) => void): Promise<InstallResult> {
+    const before = this.lockfilePackageKeys()
     const result = await this.runPnpm(['add', `${name}@latest`], onLog)
     if (result.exitCode === 0) {
+      this.trustNewLockfileEntries(before)
       this.reconcile()
       return { ok: true, spec: name, name, requiresRestart: true }
     }
@@ -142,6 +147,45 @@ export class InstallerService {
 
   private resolvedName(spec: string): string | undefined {
     return PACKAGE_NAME_RE.test(spec) ? spec : undefined
+  }
+
+  /** `name@version` keys currently in the lockfile's `packages` map. */
+  private lockfilePackageKeys(): Set<string> {
+    const lockPath = join(this.profileDir, 'pnpm-lock.yaml')
+    if (!existsSync(lockPath)) return new Set()
+    try {
+      const doc = loadYaml(readFileSync(lockPath, 'utf8')) as { packages?: Record<string, unknown> }
+      return new Set(Object.keys(doc.packages ?? {}))
+    } catch {
+      return new Set()
+    }
+  }
+
+  /**
+   * runPnpm bypasses minimumReleaseAge for this one invocation only (a CLI
+   * flag, not persisted). Without this, the freshly-resolved lockfile entries
+   * fail supply-chain policy on the next plain `pnpm install` (dsh plugin,
+   * another machine, or this app's next boot) even though the user just
+   * approved installing them here. Diff the lockfile's package set before/
+   * after and add whatever's new to minimumReleaseAgeExclude.
+   */
+  private trustNewLockfileEntries(before: Set<string>): void {
+    const after = this.lockfilePackageKeys()
+    const added = [...after].filter((key) => !before.has(key))
+    if (added.length === 0) return
+    const wsPath = join(this.profileDir, 'pnpm-workspace.yaml')
+    let doc: { minimumReleaseAgeExclude?: string[]; [key: string]: unknown } = {}
+    if (existsSync(wsPath)) {
+      try {
+        doc = (loadYaml(readFileSync(wsPath, 'utf8')) as typeof doc) ?? {}
+      } catch {
+        return
+      }
+    }
+    const exclude = new Set(doc.minimumReleaseAgeExclude ?? [])
+    for (const key of added) exclude.add(key)
+    doc.minimumReleaseAgeExclude = [...exclude]
+    writeFileSync(wsPath, dumpYaml(doc, { lineWidth: -1 }))
   }
 
   /**
