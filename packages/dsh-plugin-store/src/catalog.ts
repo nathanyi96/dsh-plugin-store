@@ -10,40 +10,13 @@
 
 import type { CatalogEntry, CatalogResult } from './protocol.ts'
 
-/** Curated seed: the @linxin666 web-ui suite as ONE app (its constituent packages are members, not separate entries). */
-const SEED: CatalogEntry[] = [
-  {
-    name: '@linxin666/dsh-web-ui-all',
-    description: 'dsh web UI 全家桶：一套安装，得到整套 GUI 功能与皮肤。',
-    author: 'linxin666',
-    category: 'suite',
-    logo: '🧩',
-    tags: ['web-ui', 'suite', 'panel', 'skin', 'ssh', 'task-board'],
-    highlights: [
-      '远程 SSH 运维（主机 / 执行 / 传输 / 隧道 / 集群 + agent 工具）',
-      '任务看板 + cron 定时任务',
-      '右侧面板：文件树 / 预览 / SCM 变更',
-      '皮肤中心 + 多种主题皮肤',
-      'Git 图 · 桌面宠物 · 实时统计 · 远程访问 · 设置面板',
-    ],
-    members: [
-      { name: '@linxin666/dsh-ssh', description: '远程 SSH 运维', logo: '🖥️' },
-      { name: '@linxin666/dsh-client-ui-task-board', description: '任务看板 + 定时任务', logo: '📋' },
-      { name: '@linxin666/dsh-client-ui-aionui-panel', description: '右侧面板（文件树 / 预览 / SCM）', logo: '🧩' },
-      { name: '@linxin666/dsh-client-ui-skin-center', description: '皮肤中心', logo: '🎨' },
-      { name: '@linxin666/dsh-skins', description: '皮肤集合', logo: '🎨' },
-      { name: '@linxin666/dsh-client-ui-skin-whale-song', description: '「鲸歌」皮肤', logo: '🐋' },
-      { name: '@linxin666/dsh-client-ui-git-graph', description: 'Git 提交历史图', logo: '🔀' },
-      { name: '@linxin666/dsh-pet', description: '桌面宠物', logo: '🐾' },
-      { name: '@linxin666/dsh-live-stats', description: '实时统计', logo: '📊' },
-      { name: '@linxin666/dsh-remote-web-ui', description: '远程访问 web UI', logo: '🌐' },
-      { name: '@linxin666/dsh-client-ui-web-ui-settings', description: 'web UI 设置面板', logo: '⚙️' },
-    ],
-    source: 'manifest',
-    dshPlugin: true,
-    repository: 'https://github.com/zhu1090093659/dsh-web-ui',
-  },
-]
+/**
+ * No hardcoded seed: every entry the catalog shows must be pulled live, either
+ * from an aggregated curated manifest (`manifestUrl`/`manifestUrls`, PR-based)
+ * or from npm registry discovery. An empty seed means an empty catalog until
+ * one of those sources is configured or npm search is enabled.
+ */
+const SEED: CatalogEntry[] = []
 
 export interface CatalogConfig {
   /** Curated manifest URL (JSON `{ plugins: [...] }`). Empty → seed only. */
@@ -221,7 +194,8 @@ export class CatalogService {
       const hits = new Map<string, NpmSearchHit>()
       const searches = [
         ...queries.map(q => npmSearch(q)),
-        ...scopes.map(s => npmSearch(`scope:${s}`)),
+        // npm's search API scope qualifier takes the bare scope name, no leading `@`.
+        ...scopes.map(s => npmSearch(`scope:${s.replace(/^@/, '')}`)),
       ]
       const results = await Promise.all(searches)
       for (const list of results) {
