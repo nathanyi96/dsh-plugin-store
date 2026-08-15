@@ -1,6 +1,13 @@
 {
   "name": "dsh-plugin-store",
   "description": "DeepSeek Harness 的 Plugin Store：浏览、搜索、安装/卸载 DSH 插件，全程 GUI 化，免命令行。catalog（npm 搜索 + curated manifest 聚合）+ 宿主 pnpm 安装器（loopback 路由）+ 侧边栏入口与中心列目录面板 + appstore_search agent 工具。",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "plugin-store",
+    "dsh-web-ui"
+  ],
   "version": "0.1.0",
   "type": "module",
   "engines": {
