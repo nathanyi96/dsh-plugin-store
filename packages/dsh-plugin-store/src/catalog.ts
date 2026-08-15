@@ -30,8 +30,16 @@ export interface CatalogConfig {
   manifestUrls?: string[]
   /** Whether to query the npm registry for live discovery. */
   enableNpmSearch?: boolean
-  /** Keyword queries for npm search. */
+  /** Free-text queries for npm search (noisy — results are substring-filtered). */
   npmSearchQueries?: string[]
+  /**
+   * npm's `keywords:<word>` search qualifier (unlike `scope:`, this one
+   * actually works): an exact match against a package's declared
+   * `package.json` `keywords[]`. High-precision — a hit here is a real
+   * self-tag, not a name/description coincidence, so these bypass the
+   * name-substring filter that free-text hits go through.
+   */
+  npmKeywordQueries?: string[]
   /** Scopes to enumerate for npm discovery. */
   npmScopes?: string[]
 }
@@ -42,6 +50,8 @@ export interface CatalogConfig {
  * so they are auto-discovered as soon as they publish with these markers.
  */
 const DEFAULT_QUERIES = ['dsh-plugin', 'deepseek-harness', 'dsh-web-ui', 'deepsafe', 'safety-eval']
+/** `keywords:<word>` qualified searches — see `npmKeywordQueries` doc above. */
+const DEFAULT_KEYWORD_QUERIES = ['deepseek-harness', 'dsh-plugin']
 /** Scopes enumerated for npm discovery (plugin families + DeepSafe's org). */
 const DEFAULT_SCOPES = ['@linxin666', '@ai45lab']
 
@@ -190,23 +200,46 @@ export class CatalogService {
     // 2) npm discovery
     if (this.config.enableNpmSearch !== false) {
       const queries = this.config.npmSearchQueries ?? DEFAULT_QUERIES
+      const keywordQueries = this.config.npmKeywordQueries ?? DEFAULT_KEYWORD_QUERIES
       const scopes = this.config.npmScopes ?? DEFAULT_SCOPES
       const hits = new Map<string, NpmSearchHit>()
-      const searches = [
+      // High-precision hits — scope enumeration and `keywords:` self-tags — may
+      // skip the name-substring filter: they are already scoped or self-tagged
+      // as DSH plugins, so a hit there is trusted up front (the `dsh`-field
+      // check in fetchManifestInfo remains the final gate). Free-text hits go
+      // through the coarse name filter below.
+      const trusted = new Set<string>()
+      const results = await Promise.all([
         ...queries.map(q => npmSearch(q)),
-        // npm's search API scope qualifier takes the bare scope name, no leading `@`.
-        ...scopes.map(s => npmSearch(`scope:${s.replace(/^@/, '')}`)),
+        // `keywords:<word>` qualifier: exact match on a package's declared
+        // keywords[] — high precision, and (unlike `scope:`) it actually works.
+        ...keywordQueries.map(q => npmSearch(`keywords:${q}`)),
+        // Scope enumeration: the search API's `scope:` qualifier is unreliable
+        // (returns 0 against the registry), but querying the bare scope name
+        // (e.g. `@linxin666`) returns exactly that scope's packages.
+        ...scopes.map(s => npmSearch(s)),
+      ])
+      const resultKinds = [
+        ...queries.map(() => 'free' as const),
+        ...keywordQueries.map(() => 'keyword' as const),
+        ...scopes.map(() => 'scope' as const),
       ]
-      const results = await Promise.all(searches)
-      for (const list of results) {
-        for (const h of list) if (!hits.has(h.name)) hits.set(h.name, h)
-      }
+      results.forEach((list, i) => {
+        const kind = resultKinds[i]
+        for (const h of list) {
+          if (hits.has(h.name)) continue
+          hits.set(h.name, h)
+          if (kind !== 'free') trusted.add(h.name)
+        }
+      })
       sources.push('npm')
 
-      // Enrich candidates (scope hits are all candidates; keyword hits must look dsh-ish).
+      // Enrich candidates: trusted hits (scope/keyword) bypass the name
+      // filter; free-text hits must look dsh-ish before we spend a registry
+      // round-trip on them.
       const candidates = [...hits.values()].filter(h => {
         if (byName.has(h.name)) return false
-        if (scopes.some(s => h.name.startsWith(`${s}/`))) return true
+        if (trusted.has(h.name)) return true
         const lower = h.name.toLowerCase()
         return lower.includes('dsh') || lower.includes('deepseek') || lower.includes('harness')
       })
