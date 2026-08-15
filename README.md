@@ -28,7 +28,7 @@ freshest:
    marks a package as a real DSH plugin.
 
 Nothing is hardcoded into the package itself. See
-[`packages/dsh-plugin-store/README.md`](packages/dsh-plugin-store/README.md#怎么知道生态里有哪些插件目录来源)
+[`packages/dsh-plugin-store/README.md`](packages/dsh-plugin-store/README.md#where-the-catalog-comes-from)
 for the full breakdown, and [`AGENTS.md`](AGENTS.md) for how to register your own plugin.
 
 ## Development

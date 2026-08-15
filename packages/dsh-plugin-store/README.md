@@ -1,84 +1,93 @@
-# dsh-plugin-store — DeepSeek Harness 的 Plugin Store
+# dsh-plugin-store — Plugin Store for DeepSeek Harness
 
-在 Web GUI 里浏览、搜索、安装 / 卸载 DSH 插件，不用再跑 `dsh plugin add ...` 命令行。
-宿主半区挂 `/api/dsh-app-store/*` loopback 路由 + pnpm 安装器；浏览器半区注入侧边栏「App Store」入口 + 中心列目录面板；另向 agent 暴露只读的 `appstore_search` 工具。
+[English](README.md) · [中文](README.zh-CN.md)
 
-## 能力
+Browse, search, and install/uninstall DSH plugins from the web GUI — no more `dsh plugin add ...` on the command line. The host half serves `/api/dsh-app-store/*` loopback routes plus a pnpm installer; the browser half injects a sidebar "App Store" entry plus a center-column catalog panel; it also exposes a read-only `appstore_search` tool to the agent.
 
-| 能力 | 说明 |
+## Capabilities
+
+| Capability | Description |
 |---|---|
-| 目录浏览 | 合并三类来源：内置种子、可配置 curated manifest、npm registry 搜索 |
-| 搜索 | 按插件名 / 描述 / tags 过滤 |
-| 安装 / 卸载 | 宿主进程跑 `pnpm add/remove`，NDJSON 流式回传进度日志 |
-| 已装状态 | 从 profile 的 `dependencies` 标注 `installedVersion` |
-| agent 工具 | `appstore_search`（只读）；安装/卸载仅限 GUI 人工点击 |
-| 重启提示 | host 插件安装后提示重启 `dsh web` 生效 |
+| Catalog browsing | Merges three sources: bundled seed, configurable curated manifests, npm registry search |
+| Search | Filters by plugin name / description / tags |
+| Install / uninstall | Runs `pnpm add/remove` in the host process, streaming NDJSON progress logs |
+| Installed status | Annotates `installedVersion` from the profile's `dependencies` |
+| Agent tool | `appstore_search` (read-only); install/uninstall is GUI-click-only |
+| Restart notice | Prompts to restart `dsh web` after installing a host plugin |
 
-## 怎么知道生态里有哪些插件（目录来源）
+## Where the catalog comes from
 
-DSH **没有中心 registry**，所以本插件的目录由三层合并，从可靠到新鲜依次是：
+DSH has **no central registry**, so this plugin's catalog merges three sources, from most reliable to freshest:
 
-1. **内置种子**（`src/catalog.ts` 的 `SEED`）——目前**为空**：本包不附带任何硬编码的插件数据，避免看起来像是"官方认证"或"从来源仓库直接拉取"的条目实际上是手写的。离线场景下目录会是空的，这是有意的取舍；
-2. **curated manifest**——一个你维护的 JSON（`{ plugins: [...] }`），通过配置 `manifestUrl` 指向（例如 GitHub raw，比如本仓库的 [`catalog.json`](../../catalog.json)）。**这是规模化后的正解**：更新目录只需改这个文件，无需重新发布插件。**注意**：`manifestUrl` 默认未配置——要让 `catalog.json` 实际生效，必须由部署方在 profile 配置里显式指向它的 raw URL；
-3. **npm 搜索**（默认启用）——对配置的 `npmScopes`（默认 `@linxin666`）和 `npmSearchQueries`（默认 `dsh-plugin` / `deepseek-harness` / `dsh-web-ui`）做 registry 搜索，并**只收录 `package.json` 里声明了 `dsh` 字段（`dsh.bundle` 或 `dsh.client`）的包**——这个字段就是「这是 DSH 插件」的指纹。name / description / author / repository / homepage 全部从 npm registry 实时读取，不做任何人工加工。
+1. **Bundled seed** (`SEED` in `src/catalog.ts`) — currently **empty** by design: the package ships no hardcoded plugin data, to avoid entries that look "officially vetted" or "pulled from the source repo" but are actually hand-written. The catalog is empty offline — an intentional trade-off.
+2. **Curated manifests** — a JSON you maintain (`{ plugins: [...] }`), pointed at via `manifestUrl` (e.g. GitHub raw, such as this repo's [`catalog.json`](../../catalog.json)). **This is the scalable answer**: updating the catalog means editing that one file, no re-release. **Note**: `manifestUrl` is unset by default — a deployment must explicitly point it at the raw URL for `catalog.json` to take effect.
+3. **npm registry search** (enabled by default) — three kinds of queries:
+   - free-text queries (`npmSearchQueries`, default `dsh-plugin` / `deepseek-harness` / `dsh-web-ui` / `deepsafe` / `safety-eval`) — noisy, filtered by name;
+   - `keywords:` self-tag queries (`npmKeywordQueries`, default `deepseek-harness` / `dsh-plugin`) — exact match against a package's declared `keywords[]`, high precision;
+   - scope enumeration (`npmScopes`, default `@linxin666` / `@ai45lab`) — the registry search API's `scope:` qualifier is unreliable, so the bare scope name is queried directly.
 
-想让自己插件被发现，三条路任选：把它加进某个 curated manifest；发布到 npm 并带上 `dsh` manifest 字段 + 相关关键词/scope（这条无需任何人审核，自动生效）；或直接 PR 进本仓库的种子清单（当前为空，等你来填）。
+   Every candidate is then gated on the `dsh` manifest field (`dsh.bundle` or `dsh.client`) in its `package.json` — that field is the only fingerprint marking a package as a real DSH plugin. name / description / author / repository / homepage are all read live from the registry; nothing is hand-curated.
 
-## 为什么目录现在几乎全是 linxin666，怎么让其他人上架
+To get your own plugin discovered, pick any of three routes: add it to a curated manifest; publish to npm with the `dsh` field plus matching keywords/scope (no review required, fully automatic); or PR into this repo's seed list (currently empty — waiting for you to fill it).
 
-当前 npm 上能被自动发现的、带 `dsh` 字段的第三方插件全是 `@linxin666/*`，**不是限制，而是现状**：DSH 生态还很年轻（`0.1.0-rc.6`），目前能核实的就这一家。Plugin Store 的目录里没有「只许某个人」的逻辑——它只是如实反映了「现在存在什么」，且不做任何策展加工（没有自定义 logo、没有手写 highlights、没有把多个包打包成一个"套件"卡片——npm 元数据里没有这些信息，硬编码它们等于编造）。
+## Why discovery looked sparse — and how to onboard more
 
-要「破到所有人」，按从自动到人工排序，就这三条，代码里都已支持：
+The catalog reflects exactly what the npm registry currently hosts. For a while the only self-declaring plugins were one org's (`@linxin666/*`); the store does **not** restrict by author — it just reports what exists, with no curation (no custom logos, no hand-written highlights, no packing multiple packages into a "suite" card — none of that lives in npm metadata, and hardcoding it would be fabrication). As more authors publish with the `dsh` field + matching keywords/scope, they surface automatically.
 
-1. **npm 关键词搜索（自动发现，已有，默认开启）**——任何人把插件发布到 npm、`package.json` 里带上 `dsh` 字段（`dsh.bundle` 或 `dsh.client`）、描述/关键词里含 `dsh-plugin` / `deepseek-harness` 等，就会被搜到，且展示的信息全部来自 npm registry 的真实数据。这是「检测」机制，但依赖对方遵守命名/关键词约定，所以有漏网。
-2. **curated manifest / 本仓库的 `catalog.json`（上架，正解，但需要先接线）**——根目录的 [`catalog.json`](../../catalog.json) 是「registry index」的模板，目前 `plugins: []` 为空。任何人 PR 一个条目进来，**并且**有人把某个部署的 `manifestUrl` 配置指向它的 raw URL，PR 的条目才会真的显示出来——这两步都要做到，只 PR 不配置是不会生效的。
-3. **先发布 Plugin Store 本身**——把本仓库推到 GitHub、把 `dsh-plugin-store` 发到 npm，它才成为别人能装上、能看到的入口。
+To broaden the ecosystem, in order from automatic to manual:
 
-一句话：**没有中心 registry 是 DSH 现在的现实，Plugin Store 用「npm 关键词检测（已生效）+ 可 PR 但需手动接线的 catalog.json」两条腿补上；目录里的每一条都直接来自 npm registry 的真实包数据，没有编造的展示信息。**
+1. **npm keyword/scope discovery (automatic, enabled by default)** — anyone who publishes with a `dsh` field and `dsh-plugin` / `deepseek-harness` keywords (or under a scanned scope) is discovered, with all metadata read live from the registry. This is the "detection" mechanism, but it relies on authors following the naming/keyword conventions, so some slip through.
+2. **Curated manifest / this repo's `catalog.json` (the scalable answer, needs wiring)** — PR an entry into [`catalog.json`](../../catalog.json) (currently `plugins: []`), **and** have a deployment point its `manifestUrl` at the raw URL. Both steps are required: a PR alone does nothing until some deployment aggregates it.
+3. **Ship the Plugin Store itself** — push this repo to GitHub and publish `dsh-plugin-store` to npm, so it becomes the entry point others install.
 
-## 架构（双半区）
+In one line: **no central registry is DSH's current reality; the Plugin Store covers it with npm discovery (live) + a PR-able, wiring-required `catalog.json`. Every entry is real registry data — nothing fabricated.**
 
-- **宿主半区**（`src/`，导出 `.`）：`CatalogService`（目录）+ `InstallerService`（pnpm + bundle reconcile）+ `makeRoutes`（loopback 路由）+ `appstoreSearchTool`。
-- **浏览器半区**（`src/client/`，导出 `./client`）：侧边栏入口（DOM 注入 + MutationObserver 自愈）+ 中心列 React 目录面板。
+## Architecture (two halves)
 
-安装 = 在 profile 目录跑 `pnpm add`，成功后把 `dsh.bundle` 声明的包 reconcile 进 `dsh.profile.bundles`（等价 `dsh plugin` 的行为）。
+- **Host half** (`src/`, exports `.`): `CatalogService` (catalog) + `InstallerService` (pnpm + bundle reconcile) + `makeRoutes` (loopback routes) + `appstoreSearchTool`.
+- **Browser half** (`src/client/`, exports `./client`): a sidebar entry (DOM injection + MutationObserver self-heal) + a center-column React catalog panel.
 
-## 安全模型
+Installation = `pnpm add` in the profile dir, then reconcile packages declaring `dsh.bundle` into `dsh.profile.bundles` (equivalent to `dsh plugin`).
 
-- 所有 `/api/dsh-app-store/*` 路由**仅限 loopback**（同源校验），不会把「下载并执行第三方代码」的能力暴露给局域网。
-- 安装前浏览器弹出 `confirm`，并展示来源仓库链接供核对。
-- agent 只有只读的 `appstore_search`；安装/卸载必须人工点击。
-- 安装 spec 白名单：裸包名 / 绝对 `file:` `link:` / `https://github.com/...git`，其余拒绝。
+## Security model
 
-## 安装
+- All `/api/dsh-app-store/*` routes are **loopback-only** (same-origin check), so the ability to download-and-execute third-party code is never exposed to the LAN.
+- The browser prompts a `confirm` before install and shows the source repository link for review.
+- The agent only gets the read-only `appstore_search`; install/uninstall requires a human click.
+- Install-spec allowlist: bare package name / absolute `file:` `link:` / `https://github.com/...git` — everything else is rejected.
+- After an install/update resolves fresh lockfile entries, the store persists them into `pnpm-workspace.yaml`'s `minimumReleaseAgeExclude`, so the trust survives the next plain `pnpm install` instead of tripping the 24h supply-chain gate.
+
+## Installation
 
 ```sh
-# 开发调试：从本仓库 link
+# dev/debug: link from this repo
 pnpm --filter dsh-plugin-store build
 dsh plugin --profile web add link:$(pwd)/packages/dsh-plugin-store
-# 然后重启 dsh web
+# then restart dsh web
 ```
 
-发布后从 npm 装：
+From npm once published:
 ```sh
 dsh plugin --profile web add dsh-plugin-store
 ```
 
-装完**重启 `dsh web`**：侧边栏出现「App Store」入口；agent 提示词自动出现插件说明。
+After installing, **restart `dsh web`**: the sidebar shows an "App Store" entry, and the agent's system prompt picks up the plugin description automatically.
 
-## 配置
+## Configuration
 
-| 配置 | 默认 | 说明 |
+| Config | Default | Description |
 |---|---|---|
-| `enabled` | `true` | 总开关 |
-| `announceToAgent` | `true` | 是否向 agent 宣告本插件 |
-| `profile` | `web` | 兜底 profile 名（模块上溯失败时用） |
-| `manifestUrl` | 空 | curated manifest JSON URL |
-| `enableNpmSearch` | `true` | 是否做 npm 实时发现 |
-| `npmSearchQueries` | 见源码 | npm 关键词 |
-| `npmScopes` | `['@linxin666']` | 枚举的 scope |
+| `enabled` | `true` | Master switch |
+| `announceToAgent` | `true` | Whether to announce this plugin to the agent |
+| `profile` | `web` | Fallback profile name (used when walking up fails) |
+| `manifestUrl` | empty | Curated manifest JSON URL |
+| `manifestUrls` | `[]` | Additional manifest URLs to aggregate (federation) |
+| `enableNpmSearch` | `true` | Whether to run live npm discovery |
+| `npmSearchQueries` | see source | Free-text npm queries |
+| `npmKeywordQueries` | see source | `keywords:` exact-match queries |
+| `npmScopes` | `['@linxin666', '@ai45lab']` | Scopes enumerated for discovery |
 
-## curated manifest 格式
+## Curated manifest format
 
 ```json
 {
@@ -94,17 +103,17 @@ dsh plugin --profile web add dsh-plugin-store
 }
 ```
 
-## 开发
+## Development
 
 ```sh
 pnpm --filter dsh-plugin-store typecheck   # tsc --noEmit
-pnpm --filter dsh-plugin-store build       # tsc 类型产物 + tsdown 双半区 bundle
+pnpm --filter dsh-plugin-store build       # tsc type artifacts + tsdown dual-half bundle
 ```
 
-## 已知限制
+## Known limitations
 
-- **无中心 registry**：npm 搜索是启发式的（scope + 关键词 + `dsh` 字段指纹），会有漏网与噪声；长期应维护 curated manifest。
-- **host 插件装完必须重启** `dsh web` 才生效（无进程内热加载）。
-- **三面板协调不完美**：本面板与 task-board / ssh 通过 `dsh-panel-activate` 事件互斥，但后两者只认识彼此、不认识本面板，极端情况下切面板可能需多点击一次。
-- **git 托管插件**安装时 pnpm 会拦 `prepare` 脚本，需按提示在 `pnpm-workspace.yaml` 加 `allowBuilds`（日志会透传该提示）。
-- 目录的 npm 富化会发起多个 registry 请求（5 分钟缓存一次）。
+- **No central registry**: npm search is heuristic (scope + keyword + `dsh`-field fingerprint), so there are misses and noise; long-term, maintain a curated manifest.
+- **Host plugins require a restart** of `dsh web` to take effect (no in-process hot reload).
+- **Three-panel coordination is imperfect**: this panel and task-board / ssh are mutually exclusive via the `dsh-panel-activate` event, but the latter two only know each other, not this panel — in edge cases switching panels may need an extra click.
+- **Git-hosted plugins**: pnpm blocks `prepare` scripts on install; follow the hint in the log to add an `allowBuilds` entry in `pnpm-workspace.yaml`.
+- npm enrichment issues several registry requests (cached for 5 minutes).
